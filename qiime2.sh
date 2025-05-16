@@ -4,9 +4,9 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=80G
-#SBATCH --time=05:00:00
-#SBATCH --account=xxxxx
+#SBATCH --mem=20G
+#SBATCH --time=01:00:00
+#SBATCH --account=xxx
 #SBATCH --partition=standard
 #SBATCH -o qiime2_1_%j.out
 #SBATCH -e qiime2_1%j.err
@@ -66,26 +66,26 @@ conda activate qiime2-amplicon-2024.10
 
 # ALternatively, dereplicate with "uniq" mode, then extract amplicon reads, and then retrain the classifier. 
 
-# echo -e 'sample-id\tforward-absolute-filepath\treverse-absolute-filepath' > manifest_STTR.tsv
-# for FOR in /nfs/turbo/umms-youngvi/nidhi/STTR_16S/Young_M04695_R-443985636/*_R1*fastq.gz;
+# echo -e 'sample-id\tforward-absolute-filepath\treverse-absolute-filepath' > manifest2_STTR.tsv
+# for FOR in /nfs/turbo/umms-youngvi/nidhi/STTR_16S/Young_M04695_R-443985636/part2/*_R1*fastq.gz;
 # do
 #  n=$(basename $FOR | cut -f1 -d_);
 #  REV=${FOR/_R1_/_R2_}
 #  echo $n
-#  echo -e "$n\t$PWD/$FOR\t$PWD/$REV" >> /home/user/STTR_16S/manifest_STTR.tsv;
+#  echo -e "$n\t$PWD/$FOR\t$PWD/$REV" >> /home/user/STTR_16S/manifest2_STTR.tsv;
 # done
 
 ## Edit the file path in manifest.tsv to remove "/home/user"
 
 # qiime tools import \
 #  --type 'SampleData[PairedEndSequencesWithQuality]' \
-#  --input-path /home/user/STTR_16S/manifest_STTR.tsv \
-#  --output-path sttr-demux2.qza \
+#  --input-path /home/user/STTR_16S/manifest2_STTR.tsv \
+#  --output-path sttr2-demux2.qza \
 #  --input-format PairedEndFastqManifestPhred33V2
 
 #   qiime demux summarize \
-#  --i-data /home/user/STTR_16S/sttr-demux2.qza \
-#  --o-visualization /home/user/STTR_16S/demux2.qzv
+#  --i-data /home/user/STTR_16S/sttr2-demux2.qza \
+#  --o-visualization /home/user/STTR_16S/demux2_2.qzv
 
 #Removing the following samples because of low reads
 #1511.cec	1972	1972
@@ -94,22 +94,22 @@ conda activate qiime2-amplicon-2024.10
 input=/home/user/STTR_16S/
 
 # qiime dada2 denoise-paired \
-#  --i-demultiplexed-seqs $input/sttr-demux2.qza \
+#  --i-demultiplexed-seqs $input/sttr2-demux2.qza \
 #   --p-trunc-len-f 250 \
 #  --p-trunc-len-r 230 \
-#  --o-representative-sequences $input/sttr-rep-seqs-dada2.qza \
-#  --o-table $input/sttr-table2-dada2.qza \
-#  --o-denoising-stats $input/sttr-stats2-dada2.qza \
+#  --o-representative-sequences $input/sttr2-rep-seqs-dada2.qza \
+#  --o-table $input/sttr2-table2-dada2.qza \
+#  --o-denoising-stats $input/sttr2-stats2-dada2.qza \
 #  --p-n-threads 5
 
 # qiime feature-table merge \
+# --i-tables sttr2-table2-dada2.qza \
 # --i-tables table2-dada2.qza \
-# --i-tables table-dada2.qza \
 # --o-merged-table merged-tables.qza
 
 # qiime feature-table merge-seqs \
-# --i-data rep-seqs2-dada2.qza \
 # --i-data rep-seqs-dada2.qza \
+# --i-data sttr2-rep-seqs-dada2.qza \
 # --o-merged-data merged-rep-seqs.qza
 
 
@@ -119,38 +119,40 @@ input=/home/user/STTR_16S/
 #-o $input/picrust2_out_pipeline/EC_metagenome_out//pred_metagenome_unstrat_descrip.tsv.gz
 
 # qiime metadata tabulate \
-#   --m-input-file $input/sttr-stats2-dada2.qza \
-#   --o-visualization $input/sttr-stats2-dada2.qzv
+#   --m-input-file $input/merged-tables.qza \
+#   --o-visualization $input/merged-tables.qzv
 
-#   qiime feature-table summarize \
-#   --i-table $input/sttr-table2-dada2.qza \
-#   --o-visualization $input/sttr-tables.qzv \
+# qiime feature-table summarize \
+#   --i-table $input/merged-tables.qza \
+#   --o-visualization $input/merged-tables-summarized.qzv \
 #   --m-sample-metadata-file $input/metadata-sttr.txt
 
 # qiime feature-table tabulate-seqs \
-#   --i-data sttr-rep-seqs-dada2.qza \
-#   --o-visualization sttr-rep-seqs-dada2.qzv
+#   --i-data merged-rep-seqs.qza \
+#   --o-visualization merged-rep-seqs.qzv
 
 # qiime phylogeny align-to-tree-mafft-fasttree \
-#   --i-sequences sttr-rep-seqs-dada2.qza \
-#   --o-alignment aligned-sttr-rep-seqs.qza \
-#   --o-masked-alignment masked-aligned-sttr-rep-seqs-dada2.qza \
-#   --o-tree unrooted-tree-merged.qza \
-#   --o-rooted-tree rooted-tree-merged.qza
+#   --i-sequences merged-rep-seqs.qza \
+#   --o-alignment aligned-sttr2-rep-seqs.qza \
+#   --o-masked-alignment masked-aligned-sttr2-rep-seqs-dada2.qza \
+#   --o-tree unrooted-tree-merged2.qza \
+#   --o-rooted-tree rooted-tree-merged2.qza
 
 # qiime diversity core-metrics-phylogenetic \
-#   --i-phylogeny rooted-tree-merged.qza \
-#   --i-table sttr-table2-dada2.qza \
-#   --p-sampling-depth 5830 \
-#   --m-metadata-file metadata-sttr.txt \
-#   --output-dir core-metrics-results
+#   --i-phylogeny rooted-tree.qza \
+#   --i-table filtered-table-d0.qza \
+#   --p-sampling-depth 14090 \
+#   --m-metadata-file 16s_metadata_d0.tsv \
+#   --p-ignore-missing-samples \
+#   --output-dir core-metrics-results-end
 
-# qiime diversity beta-group-significance \
-#   --i-distance-matrix core-metrics-results/bray_curtis_distance_matrix.qza \
-#   --m-metadata-file metadata-sttr.txt \
-#   --o-visualization core-metrics-results/bray_distance_matrix.qzv \
-#   --p-pairwise \
-#   --m-metadata-column treatment \
+qiime diversity beta-group-significance \
+  --i-distance-matrix core-metrics-results-end/weighted_unifrac_distance_matrix.qza \
+  --m-metadata-file 16s_metadata_d0.tsv \
+  --o-visualization core-metrics-results-end/weighted_unifrac_distance_matrix.qzv \
+  --p-ignore-missing-samples \
+  --p-pairwise \
+  --m-metadata-column Treatment \
 
 # qiime diversity beta-group-significance \
 #   --i-distance-matrix core-metrics-results/weighted_unifrac_distance_matrix.qza \
@@ -168,21 +170,28 @@ input=/home/user/STTR_16S/
 
 # qiime tools export \
 # --input-path rooted_tree.qza \
-# --output-path tree
+# # --output-path tree
 
-# classifier=/SILVA_db_qiime/silva-138-trained-classifier.qza
+# classifier=/home/user/SILVA_db_qiime/silva-138-trained-classifier.qza
 # qiime feature-classifier classify-sklearn \
 #   --i-classifier $classifier \
-#   --i-reads sttr-rep-seqs-dada2.qza \
-#   --o-classification sttr-taxonomy-silva138-1.qza
+#   --i-reads merged-rep-seqs.qza \
+#   --o-classification merged-taxonomy-silva138-1.qza
 
-qiime taxa barplot \
-  --i-table sttr-table2-dada2.qza \
-  --i-taxonomy sttr-taxonomy-silva138-1.qza\
-  --m-metadata-file metadata-sttr.txt \
-  --o-visualization taxa-bar-plots-silva138-ed.qzv
+# qiime taxa barplot \
+#   --i-table table2-dada2.qza \
+#   --i-taxonomy taxonomy-silva138-1.qza\
+#   --m-metadata-file metadata-sttr.txt \
+#   --o-visualization taxa-bar-plots-silva138-ed.qzv
 
 # qiime feature-classifier classify-sklearn \
 #   --i-classifier /home/user/qiime2/silva-138-trained-classifier.qza \
-#   --i-reads /home/user/STTR_16S/exported_rep/sttr-rep-seqs-ed.qza \
-#   --o-classification sttr-silva1-taxonomy-ed.qza
+#   --i-reads /home/user/STTR_16S/exported_rep/rep-seqs-ed.qza \
+#   --o-classification silva1-taxonomy-ed.qza
+
+
+# qiime feature-table filter-samples \
+#     --i-table table-dada2.qza \
+#     --m-metadata-file 16s_metadata_d0.tsv \
+#     --o-filtered-table filtered-table-d0.qza
+
