@@ -1,0 +1,65 @@
+# Pathway enrichment ===
+library(AnnotationDbi)
+library(org.Mm.eg.db)
+
+
+# View the mapping
+head(gene_mapping_biomart)
+# Extract only the ENTREZIDs for the hub genes
+hub_genes_entrez <- gene_mapping$ENTREZID
+
+# Remove any NAs (genes that didn't map to an Entrez ID)
+hub_genes_entrez <- na.omit(hub_genes_entrez)
+
+# Display the mapped Entrez IDs
+hub_genes_entrez
+
+BiocManager::install(c("GO.db"))
+library(gage)
+library(GO.db)
+
+resdata<-column_to_rownames(resdata,"gene")
+resdata$symbol <- mapIds(org.Mm.eg.db, keys=row.names(resdata), column="SYMBOL", keytype="ENSEMBL", multiVals="first")
+resdata$entrez <- mapIds(org.Mm.eg.db, keys=row.names(resdata), column="ENTREZID", keytype="ENSEMBL", multiVals="first")
+resdata$name <- mapIds(org.Mm.eg.db, keys=row.names(resdata), column="GENENAME", keytype="ENSEMBL", multiVals="first")
+res.fc <- resdata$log2FoldChange
+names(res.fc) <- resdata$entrez
+# set up kegg database
+kg.mma <- kegg.gsets(species="mmu")
+kegg.sigmet.gs <- kg.mma$kg.sets[kg.mma$sigmet.idx]
+kegg.dise.gs <- kg.mma$kg.sets[kg.mma$dise.idx]
+
+# set up go database
+go.mm <- go.gsets(species="mouse")
+go.bp.gs <- go.mm$go.sets[go.mm$go.subs$BP]
+go.mf.gs <- go.mm$go.sets[go.mm$go.subs$MF]
+go.cc.gs <- go.mm$go.sets[go.mm$go.subs$CC]
+
+# Run enrichment analysis on all log fc
+fc.kegg.sigmet.p <- gage(res.fc, gsets = kegg.sigmet.gs)
+fc.kegg.dise.p <- gage(res.fc, gsets = kegg.dise.gs)
+fc.go.bp.p <- gage(res_6.fc, gsets = go.bp.gs)
+fc.go.mf.p <- gage(res_6.fc, gsets = go.mf.gs)
+fc.go.cc.p <- gage(res_6.fc, gsets = go.cc.gs)
+
+# covert the kegg results to data frames
+fc.kegg.sigmet.p.up <- as.data.frame(fc.kegg.sigmet.p$greater)
+fc.kegg.dise.p.up <- as.data.frame(fc.kegg.dise.p$greater)
+
+fc.kegg.sigmet.p.down <- as.data.frame(fc.kegg.sigmet.p$less)
+fc.kegg.dise.p.down <- as.data.frame(fc.kegg.dise.p$less)
+
+# convert the go results to data frames
+fc.go.bp.p.up <- as.data.frame(fc.go.bp.p$greater)
+fc.go.mf.p.up <- as.data.frame(fc.go.mf.p$greater)
+fc.go.cc.p.up <- as.data.frame(fc.go.cc.p$greater)
+
+fc.go.bp.p.down <- as.data.frame(fc.go.bp.p$less)
+fc.go.mf.p.down <- as.data.frame(fc.go.mf.p$less)
+fc.go.cc.p.down <- as.data.frame(fc.go.cc.p$less)
+
+source("https://bioconductor.org/biocLite.R")
+BiocManager::install("pathview")
+
+fc.kegg.sigmet.p.up[grepl("mmu04659", rownames(fc.kegg.sigmet.p.up), fixed=TRUE),]
+pathview(gene.data=res_6.fc, species="mmu", pathway.id="mmu04659")
