@@ -1,0 +1,385 @@
+# ===================== Load Data =====================
+#  Inputting all samples
+# ==========================================
+counts<-read.table("merged_counts_v3.txt", header = TRUE,row.names = "GeneID",check.names = FALSE)
+metadata<-read.delim("rnaseq_metadata_v2.txt",header=TRUE)
+View(metadata)
+View(counts)
+#col<-c("4890-MB-1", "4890-MB-2", "4890-MB-3", "4890-MB-4", "4890-MB-5", "4890-MB-6", "4890-MB-7", "4890-MB-8", "4890-MB-9", "4890-MB-10", "4890-MB-11", "4890-MB-12", "4890-MB-13", "4890-MB-14", "4890-MB-15", "4890-MB-16", "4890-MB-17", "4890-MB-18", "4890-MB-19", "4890-MB-20", "4890-MB-21", "4890-MB-22", "4890-MB-23", "4890-MB-24", "4890-MB-25", "4890-MB-26", "4890-MB-27", "4890-MB-28", "4890-MB-29", "4890-MB-30", "4890-MB-31", "4890-MB-32", "4890-MB-33", "4890-MB-34", "4890-MB-35", "4890-MB-36")
+col<-c("4890-MB-1", "4890-MB-2", "4890-MB-3", "4890-MB-4", "4890-MB-5", "4890-MB-6", "4890-MB-7", "4890-MB-8", "4890-MB-9", "4890-MB-10", "4890-MB-11", "4890-MB-12", "4890-MB-13", "4890-MB-14", "4890-MB-15", "4890-MB-16", "4890-MB-17", "4890-MB-18")
+
+counts<-counts[,col]
+dds_og<-DESeqDataSetFromMatrix(countData = counts,colData = metadata, design=~Treatment)
+dds_deseq_all_og <- DESeq(dds_og)
+keep_all <- rowSums(counts(dds_deseq_all_og) >= 1)>=5
+dds_og_filtered <- dds_deseq_all_og[keep_all, ]
+vsd_all <- vst(dds_filtered)
+rld_all<-rlog(dds_og_filtered)
+
+pcaData<-plotPCA(vsd_all,intgroup=c("Treatment"),returnData=TRUE)
+percentVar <- round(100 * attr(pcaData, "percentVar"))
+
+group_sample<-metadata$Treatment
+group_sample<-factor(group_sample)
+
+pca_all <- ggplot(pcaData, aes(PC1, PC2, color = group_sample, fill = group_sample)) +
+  scale_fill_manual(values = c("#02adba","#b52367","grey" )) +
+  scale_color_manual(values = c("#02adba","#b52367","grey")) +  # Ensures colors match
+  geom_point(size = 4, stroke = 0.6, shape = 21, color = "black") +  # Ensure shape supports fill
+  xlab(paste0("PC1: ", percentVar[1], "% variance")) +
+  ylab(paste0("PC2: ", percentVar[2], "% variance")) +
+  theme_bw() +
+  theme(axis.text = element_text(size = 12), axis.title=element_text(size=13),
+        legend.text = element_text(size = 12), 
+        legend.key.size = unit(2, "lines"))  +geom_text(aes(label=rownames(pcaData)), hjust=0.5, vjust=-0.5, size=3)
+
+pca_all #All above can go to github. Similar plots in vst vs rlog
+
+res_all<-results(dds_filtered, contrast=c("Treatment", "No_treatment_controls", "HhWT+isotype_control_mAb"),alpha=0.05)
+res_p40<-results(dds_filtered, contrast=c("Treatment", "HhWT+anti-p40", "No_treatment_controls"),alpha=0.05)
+res_p40<-results(dds_filtered, contrast=c("Treatment", "HhWT+anti-p40", "HhWT+isotype_control_mAb"),alpha=0.05)
+
+
+res_all_og<-results(dds_og_filtered, contrast=c("Treatment", "No_treatment_controls", "HhWT+isotype_control_mAb"),alpha=0.05)
+
+summary(res_p40)
+# out of 21895 with nonzero total read count for p-40 vs control
+# adjusted p-value < 0.05
+# LFC > 0 (up)       : 2590, 12%
+# LFC < 0 (down)     : 1822, 8.3%
+
+For p40 vs HhWT
+# out of 21895 with nonzero total read count
+# adjusted p-value < 0.05
+# LFC > 0 (up)       : 3501, 16%
+# LFC < 0 (down)     : 4511, 21%
+
+summary(res_all)
+# out of 50287 with nonzero total read count
+# adjusted p-value < 0.05
+# LFC > 0 (up)       : 4841, 9.6%
+# LFC < 0 (down)     : 5529, 11%
+# outliers [1]       : 72, 0.14%
+# low counts [2]     : 13650, 27%
+
+summary(res_all_og) # got the same as res_all
+
+res= subset(res_all, padj<0.05)
+res <- res[order(res$padj),]
+res_lfc5 <- subset(res, log2FoldChange > 2 | log2FoldChange < -2)
+View(res)
+resdata <- merge(as.data.frame(res), as.data.frame(counts(dds_filtered,normalized =TRUE)), by = 'row.names', sort = FALSE)
+resdata_og <- merge(as.data.frame(res_all_og), as.data.frame(counts(dds_og_filtered,normalized =TRUE)), by = 'row.names', sort = FALSE)
+resdata_p40 <- merge(as.data.frame(res_p40), as.data.frame(counts(dds_deseq_all,normalized =TRUE)), by = 'row.names', sort = FALSE)
+View(resdata_p40)
+names(resdata)[1] <- 'gene'
+write.csv(resdata, file = paste0("DE control vs Hh results-with-normalized.csv"))
+
+# ===================== Add Ensembl =====================
+##  load biomart ==========================================
+ensembl <- useEnsembl(biomart = "genes")
+ensembl <- useDataset(dataset = "mmusculus_gene_ensembl", mart = ensembl)
+b2_part1 <- getBM(attributes=c("ensembl_gene_id", "mgi_symbol"),
+                  values=a$X,
+                  mart=ensembl)
+b2_part2 <- getBM(attributes=c('ensembl_gene_id', 'description'),
+                  values=a$X,
+                  mart=ensembl)
+
+anno_resdata<-merge(resdata,b2_part1,by.x="gene",by.y="ensembl_gene_id")
+
+anno_resdata_p2<-merge(anno_resdata_df,b2_part2,by.x="gene",by.y="ensembl_gene_id")
+anno_resdata_og<-merge(resdata_og,b2_part1,by.x="Row.names",by.y="ensembl_gene_id")
+library(dplyr)
+
+#add symbol name to res ==
+
+b2_part1 <- b2_part1[!is.na(symbols)]
+
+counts_ed <- counts[rowSums(counts >= 5) >= 3, ]
+counts_ed<-rownames_to_column(counts, "gene")
+counts_ed<-merge(counts_ed,b2_part1,by.x="gene",by.y="ensembl_gene_id")
+write.table(counts_ed, "Counts_ed_v2.txt")
+#I removed the "novel genes"
+counts_ed<-read.delim("Counts_ed_v2.txt",header=TRUE,check.names = FALSE)
+counts_ed$mgi_symbol <- make.unique(as.character(counts_ed$mgi_symbol))
+counts_ed<-column_to_rownames(counts_ed,"mgi_symbol")
+counts_ed<-counts_ed[c(2:19)]
+
+dds<-DESeqDataSetFromMatrix(countData = counts_ed,colData = metadata, design=~Treatment)
+dds_deseq_all <- DESeq(dds)
+vsd_all <- vst(dds_deseq_all)
+res_all<-results(dds_deseq_all, contrast=c("Treatment", "No_treatment_controls", "HhWT+isotype_control_mAb"),alpha=0.05)
+
+summary(res_all)
+
+# out of 50287 with nonzero total read count
+# adjusted p-value < 0.05
+# LFC > 0 (up)       : 4841, 9.6%
+# LFC < 0 (down)     : 5529, 11%
+# outliers [1]       : 72, 0.14%
+# low counts [2]     : 13650, 27%
+
+# after filtering
+# out of 25765 with nonzero total read count
+# adjusted p-value < 0.05
+# LFC > 0 (up)       : 4746, 18%
+# LFC < 0 (down)     : 5146, 20%
+# outliers [1]       : 54, 0.21%
+# low counts [2]     : 499, 1.9%
+
+res= subset(res_all, padj<0.05)
+res <- res[order(res$padj),]
+resdata_v2<-as.data.frame(res)
+
+#Make volcano plot ==
+# https://bioconductor.org/packages/devel/bioc/vignettes/EnhancedVolcano/inst/doc/EnhancedVolcano.html
+BiocManager::install('EnhancedVolcano')
+library(EnhancedVolcano)
+keyvals <- ifelse(
+  res$log2FoldChange < -2.0, '#b52367',
+  ifelse(res$log2FoldChange > 2.0, 'red',
+         'grey'))
+names(keyvals)[keyvals == 'red'] <- 'high'
+names(keyvals)[keyvals == '#b52367'] <- 'low'
+names(keyvals)[keyvals == 'black'] <- 'mid'
+
+EnhancedVolcano(res,
+                lab = rownames(res),
+                x = 'log2FoldChange',
+                y = 'padj',selectLab = c('Reg3g','Reg3b','Reg4','Nos2','Gzma',
+                                           'Ltf','Il17a','','Il21','S100a8','S100a9','Mptx1','Mptx2','Ang4','Slc30a10','Fxyd4'),
+                boxedLabels = TRUE,
+                drawConnectors = TRUE,
+                FCcutoff = 2.0,
+                colCustom = keyvals)
+
+#GSEA Part C
+library(readxl)
+gsea<-read_excel("gsea_report.xlsx")
+gsea$`FWER-p-val` <- as.numeric(as.character(gsea$`FWER-p-val`))
+
+gsea_p<-ggplot(gsea, aes(x = NES, y = reorder(NAME, NES), size = GeneRatio, color=`FWER-p-val`)) +
+  geom_point() + #facet_grid(Tissue~.,scales = "free_y", space = "free_y")+
+  scale_size_continuous(range = c(3, 7))+
+  scale_color_gradient(low = "grey", high = "purple") +
+  labs(title = "GSEA Dot Plot",
+       x = "Normalized Enrichment Score (NES)", y = "Pathway", 
+       size = "GeneRatio", color = "FDR q-val")+theme_set(theme_bw())+
+  theme(axis.text=element_text(size=12),axis.title = element_text(size=13),legend.text = element_text(size=12))+
+  theme_minimal()
+gsea_p
+ggsave("gsea_colitis.svg", width = 8, height = 6)
+
+#Re-making it
+gsea<-read.delim("gsea_Colitis.tsv",header=TRUE)
+gsea$`FWER.p.val` <- as.numeric(as.character(gsea$`FWER.p.val`))
+
+ggplot(gsea, aes(x = ibd_NES,  y = reorder(NAME, ibd_NES), color = FWER.p.val, shape=type)) +
+  geom_point(alpha=0.8,size=3) + 
+  #scale_size_continuous(range = c(1, 6)) +  # Adjust point size
+  scale_color_gradient(low = "grey", high = "purple") +  # Adjust color scale for FDR
+  labs(
+    x = "NES",
+    y = "Pathway",
+    color = "FWERpval"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.y = element_text(size = 12),
+    axis.text.x = element_text(size = 12),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 12),legend.key.size = unit(4,"mm"), legend.position = "top",
+    legend
+  )+
+  scale_shape_manual(values = c(15, 16))+
+  scale_fill_manual(values=c("darkgrey","purple"))
+
+ggsave("gsea_colitis_p40.svg", width = 7, height = 9)
+
+
+library(ggplot2)
+gsea_p<-ggplot(merge_gsea, aes(x = NES, y = reorder(NAME, NES), size = GeneRatio, color=`FWER.p.val`)) +
+  geom_point() + #facet_grid(Tissue~.,scales = "free_y", space = "free_y")+
+  scale_size_continuous(range = c(3, 7))+
+  scale_color_gradient(low = "grey", high = "purple") +
+  labs(title = "GSEA Dot Plot",
+       x = "Normalized Enrichment Score (NES)", y = "Pathway", 
+       size = "GeneRatio", color = "FDR q-val")+theme_set(theme_bw())+
+  theme(axis.text=element_text(size=12),axis.title = element_text(size=13),legend.text = element_text(size=12))+
+  theme_minimal()
+# Part D ==
+# https://maayanlab.cloud/Harmonizome/gene_set/inflammatory+bowel+disease/GWASdb+SNP-Disease+Associations
+resdata2<-resdata
+resdata2$symbol <- toupper(resdata2$symbol)
+ibd<-read.delim("ibd_genes.txt")
+ibd_resdata<-merge(ibd,resdata2,by.x="IBD_genes",by.y="symbol") #93 UP in colitis
+ibd_resdata <- ibd_resdata[order(ibd_resdata$log2FoldChange),]
+ibd_resdata_filtered <- subset(ibd_resdata, log2FoldChange <= -1.5)
+ibd_resdata_filtered<-ibd_resdata_filtered[c(1,3,7)]
+View(ibd_resdata_filtered)
+ibd_resdata_filtered$log2FoldChange <- abs(ibd_resdata_filtered$log2FoldChange)
+ggplot(ibd_resdata_filtered, aes(x=1, y=IBD_genes, size = log2FoldChange,color=padj)) +
+  geom_point(alpha=0.8) +
+  scale_size_continuous(range = c(2,8), name="IBD")+xlim(1,1)+
+  scale_color_gradient(high="grey",low="#b52367")+
+  theme(axis.text.y=element_text(size=12))+scale_x_continuous(breaks=seq(1, 1), limits=c(1,1))
+
+CD<-read.delim("CD_set.txt")
+cd_resdata<-merge(CD,resdata2,by.x="CD_set",by.y="symbol") #43 entries, 35 UP in colitis
+View(cd_resdata)
+cd_resdata <- cd_resdata[order(cd_resdata$log2FoldChange),]
+cd_resdata_filtered <- subset(cd_resdata, log2FoldChange <= -0.5)
+cd_resdata_filtered<-cd_resdata_filtered[c(1,3,7)]
+cd_resdata_filtered$log2FoldChange <- abs(cd_resdata_filtered$log2FoldChange)
+View(cd_resdata_filtered)
+ggplot(cd_resdata_filtered, aes(x=1, y=CD_set, size = log2FoldChange,color=padj)) +
+  geom_point(alpha=0.8) +
+  scale_size_continuous(range = c(1,7), name="CD")+xlim(1,1)+
+  scale_color_gradient(high="grey",low="#b52367")+
+  theme(axis.text.y=element_text(size=12))+scale_x_continuous(breaks=seq(1, 1), limits=c(1,1))
+
+UC<-read.delim("UC_set_ed.txt")
+uc_resdata<-merge(UC,resdata2,by.x="UC_set",by.y="symbol")
+uc_resdata <- uc_resdata[order(uc_resdata$log2FoldChange),]
+uc_resdata_filtered <- subset(uc_resdata, log2FoldChange <= -1) #31 entries
+
+uc_resdata_filtered$log2FoldChange <- abs(uc_resdata_filtered$log2FoldChange)
+uc_resdata_filtered<-uc_resdata_filtered[c(1,3,7)]
+View(uc_resdata_filtered)
+ggplot(uc_resdata_filtered, aes(x=1, y=UC_set, size = log2FoldChange,color=padj)) +
+  geom_point(alpha=0.8) +
+  scale_size_continuous(range = c(2,8), name="UC")+xlim(1,1)+
+  scale_color_gradient(high="grey",low="#b52367")+
+  theme(axis.text.y=element_text(size=12))+scale_x_continuous(breaks=seq(1, 1), limits=c(1,1))
+
+View(uc_resdata)
+
+#Use TAMMA data
+library(readxl)
+View(resdata_v2)
+resdata_v2<-rownames_to_column(resdata_v2)
+sum(resdata_v2$log2FoldChange > 0)
+resdata_v2_df<-as.data.frame(resdata_v2)
+resdata_v2_ed$rowname <- toupper(resdata_v2_ed$rowname)
+
+resdata_p40$Row.names<-toupper(resdata_p40$Row.names)
+colnames(resdata_p40)[3] <- "L2FC_p40"
+resdata_p40_clean<-resdata_p40[c(1,3)]
+
+resdata_v2_ed<- resdata_v2_ed %>% filter(log2FoldChange <= -1)
+resdata_v2_ed$log2FoldChange <- abs(resdata_v2_ed$log2FoldChange)
+CD<-read_excel("DGE_human_Colon_CD-vs-Colon_Control.xlsx")
+View(CD)
+sum(CD$log2_FC > 0)
+sum(CD$log2_FC > 1)
+# [1] 805
+# 27718
+# CD<-CD %>% filter (Average.expression >= 10)
+
+merge_CD<-merge(resdata_v2_ed,CD,by.x="rowname",by.y="Gene")
+View(merge_CD)
+merge_CD<-merge_CD[c(1,3,4,9,10,13)]
+sum(merge_CD$log2_FC > 0)
+#159
+UC<-read_excel("DGE_human_Colon_UC-vs-Colon_Control.xlsx")
+View(UC)
+sum(UC$log2_FC_UC > 0)
+
+merge_CD_UC<-merge(merge_CD, UC,by.x="rowname",by.y="Gene")
+View(merge_CD_UC)
+
+merge_CD_UC_p40<-merge(merge_CD_UC,resdata_p40_clean,by.x="rowname",by.y="Row.names")
+View(merge_CD_UC_p40)
+merge_UC<-merge(resdata_v2_ed,UC,by.x="rowname",by.y="Gene")
+sum(merge_UC$log2_FC_UC > 1)
+#245
+
+#Generated deseq data of CRC from TCGA
+View(anno_resdata_crc)
+sum(anno_resdata_crc$log2FoldChange > 0)
+#3557
+
+sum(merge_crc$log2FoldChange.x >0)
+#295
+
+merge_crc<-merge(resdata_v2_ed,anno_resdata_crc,by.x="rowname",by.y="hgnc_symbol")
+View(merge_crc)
+
+merged_crc_p40 <- merge_crc %>%
+  left_join(6.521928, by = c("rowname" = "Row.names"))
+View(merged_crc_p40)
+merge_crc_subset<-merged_crc_p40[c(1,3,11,26)]
+merge_crc_lfc3<-merge_crc_subset %>% filter(log2FoldChange.x >=3)
+melt_merge_crc_subset<-melt(merge_crc_lfc3)
+View(melt_merge_crc_subset)
+melt_merge_crc_subset$sign <- ifelse(melt_merge_crc_subset$value >= 0, "positive", "negative")
+melt_merge_crc_subset$abs_value <- abs(melt_merge_crc_subset$value)
+
+melt_merge_crc_subset$value[is.na(melt_merge_crc_subset$value)] <- 0
+
+colnames(melt_merge_crc_subset)[1] <- "ID"
+#troubleshoot
+melt_merge_crc_subset$ID <- as.character(melt_merge_crc_subset$ID)
+
+y<-ggplot(melt_merge_crc_subset, aes(x = variable, y = ID, size = abs_value, color = value, shape = sign)) +
+  geom_point(alpha = 0.7)+
+  scale_size(range = c(0.1, 8), name = "abs_value") +
+  scale_color_gradientn(colors = c("#02adba","grey","#b52367")) +
+  scale_shape_manual(values = c("positive" = 16, "negative" = 17)) +  # 16 = solid circle, 17 = triangle
+  facet_grid(. ~ variable, scales = "free") +
+  theme_bw()
+y
+library(dplyr)
+subset<-merge_CD_UC_p40 %>% filter(log2FoldChange >=3)
+subset<-subset[c(1:2,4,8,14)]
+
+merged_crc_p40_1<-merged_crc_p40 %>%
+  left_join(subset, by = c("rowname" = "rowname"))
+
+subset_crc_p40_1<-subset %>%
+  left_join(merged_crc_p40_1, by = c("rowname" = "rowname"))
+View(subset_crc_p40_1)
+merged_crc_p40_1_2<-merged_crc_p40_1[c(1,3,11,26,29,33)]
+View(merged_crc_p40_1_2)
+
+merged_crc_p40_1_2<-merged_crc_p40_1_2 %>% filter (log2FoldChange.x > 5.3)
+
+merged_crc_p40_1_2<-read.delim("merged_crc_p40_1_2.txt")
+melt_subset<-melt(merged_crc_p40_1_2)
+View(melt_subset)
+melt_subset$sign <- ifelse(melt_subset$value >= 0, "positive", "negative")
+melt_subset$abs_value <- abs(melt_subset$value)
+View(subset)
+library(ggplot2)
+library(RColorBrewer)
+write.table(melt_subset,"melt_subset.txt")
+melt_subset<-read.delim("melt_subset.txt")
+melt_subset$rowname <- as.character(melt_subset$rowname)
+plot<-ggplot(melt_subset, aes(x = variable, y = rowname, size = abs_value, color = value, shape = sign)) +
+  geom_point(alpha = 0.7) +
+  scale_size(range = c(0.1, 8), name = "abs_value") +
+  scale_color_gradientn(colors = c("#02adba","grey","#b52367")) +
+  scale_shape_manual(values = c("positive" = 16, "negative" = 17)) +  # 16 = solid circle, 17 = triangle
+  facet_grid(. ~ variable, scales = "free") +
+  theme_bw()
+ggsave("plot.svg", width = 8, height = 6)
+
+library(reshape2)
+melt_subset<-melt(subset)
+View(melt_subset)
+melt_subset$sign <- ifelse(melt_subset$value >= 0, "positive", "negative")
+melt_subset$abs_value <- abs(melt_subset$value)
+View(subset)
+library(ggplot2)
+library(RColorBrewer)
+write.table(melt_subset,"melt_subset.txt")
+melt_subset<-read.delim("melt_subset.txt")
+
+ggplot(melt_subset, aes(x = variable, y = rowname, size = abs_value, color = value, shape = sign)) +
+  geom_point(alpha = 0.7) +
+  scale_size(range = c(0.1, 8), name = "abs_value") +
+  scale_color_gradientn(colors = c("#02adba","grey","#b52367")) +
+  scale_shape_manual(values = c("positive" = 16, "negative" = 17)) +  # 16 = solid circle, 17 = triangle
+  facet_grid(. ~ variable, scales = "free") +
+  theme_bw()
